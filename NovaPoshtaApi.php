@@ -1,12 +1,24 @@
-<?php
+<?php declare(strict_types=1);
 
+/**
+ * Class NovaPoshtaApi
+ */
 class NovaPoshtaApi
 {
+    /**
+     * API URL
+     */
     const API_URI = 'http://api.novaposhta.ua/v2.0/json/';
-    const API_KEY = 'API_key';
+    /**
+     * API KEY
+     */
+    const API_KEY = 'a8c09a5ed046fba223343e6ec4211842';
 
     protected $api;
 
+    /**
+     * NovaPoshtaApi constructor.
+     */
     public function __construct()
     {
         $this->init();
@@ -17,6 +29,9 @@ class NovaPoshtaApi
         curl_close($this->api);
     }
 
+    /**
+     * Init curl
+     */
     protected function init()
     {
         $ch = curl_init(static::API_URI);
@@ -25,7 +40,15 @@ class NovaPoshtaApi
         $this->api = $ch;
     }
 
-    public function findCities($city)
+    /**
+     * Find city ID (REF) by name or part of name
+     *
+     * @param string $city
+     *
+     * @return array
+     * @throws \Exception
+     */
+    public function findCityRefByName($city)
     {
         $data = [
             "modelName" => "Address",
@@ -41,19 +64,31 @@ class NovaPoshtaApi
         $response = curl_exec($this->api);
         $result = [];
         foreach ($this->processResponse($response) as $item) {
-            $result[] = $item->Description;
+            $result[] = [
+                "Description" => $item->Description,
+                "CityRef" => $item->Ref
+            ];
         }
 
         return $result;
     }
 
-    public function getWarehousesByCity($city)
+    /**
+     * Get city warehouses using city REF
+     *
+     * @param string $cityRef
+     * @param bool $skipPastomat
+     *
+     * @return array
+     * @throws \Exception
+     */
+    public function getWarehousesByCityRef($cityRef, $skipPastomat = true)
     {
         $data = [
             "modelName" => "AddressGeneral",
             "calledMethod" => "getWarehouses",
             "methodProperties" => [
-                "CityName" => $city
+                "CityRef" => $cityRef
             ],
             "apiKey" => static::API_KEY
         ];
@@ -62,20 +97,28 @@ class NovaPoshtaApi
         $response = curl_exec($this->api);
         $result = [];
         foreach ($this->processResponse($response) as $item) {
-            if ($item->CategoryOfWarehouse === 'Postomat') {
+            if ($skipPastomat && $item->CategoryOfWarehouse === 'Postomat') {
                 continue;
             }
-            $result[] = $item->Description;
+            $result[] = ['Description' => $item->Description];
         }
 
         return $result;
     }
 
+    /**
+     * Decode response and handle errors
+     *
+     * @param string $response
+     *
+     * @return \stdClass[]
+     * @throws \Exception
+     */
     protected function processResponse($response)
     {
         $response = (json_decode($response));
-        if (isset($response->success) && $response->success !== true) {
-            return [];
+        if (isset($response->errors[0])) {
+            throw new \Exception('API error:' . $response->errors[0]);
         }
 
         return $response->data;
@@ -83,7 +126,10 @@ class NovaPoshtaApi
 }
 
 $api = new NovaPoshtaApi();
-$result = $api->findCities('Винн');
-var_dump($result);
-$result = $api->getWarehousesByCity($result[0]);
-var_dump($result);
+$cities = $api->findCityRefByName('Винн');
+var_dump($cities);
+$firstCityRef = reset($cities);
+if (isset($firstCityRef['CityRef'])) {
+    $result = $api->getWarehousesByCityRef($firstCityRef['CityRef']);
+    var_dump($result);
+}
